@@ -1,3 +1,4 @@
 name: bi
 dependencies:
   - matplotlib
+  - requests
