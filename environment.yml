@@ -1,4 +1,6 @@
 name: bi
+channels:
+  - conda-forge
 dependencies:
   - matplotlib
   - requests
