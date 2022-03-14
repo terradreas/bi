@@ -106,13 +106,17 @@ def load_data():
         dest = dest / t[1]
 
         if not dest.exists():
+            print("downloading")
             with st.spinner("Downloading table " + t[1]):
-            
+                
                 data += [ google_drive(t[2]) ]
+                
+                st.write(data[-1])
                 data[-1].to_csv(str(dest), index=False)
 
         else:
             data += [pd.read_csv(str(dest))]
+            st.write(data[-1])
 
     #  url = 'https://drive.google.com/file/d/1CEQN35wh6imQeuXM_LSWsI3uZ5UL0etp/view?usp=sharing'
     #  path = 'https://drive.google.com/uc?export=download&id='+url.split('/')[-2]
