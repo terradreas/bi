@@ -62,6 +62,12 @@ def load_data():
     #  anchPay = pd.read_csv(path2)
     #  anchPay.set_index("ADDRESS", inplace=True)
     #  return anchBor, anchPay
+    
+    tables = [("anch", "anchor_users_positions.csv", "1CEQN35wh6imQeuXM_LSWsI3uZ5UL0etp")]
+    
+    from util import load_gdrive
+    
+    load_gdrive(tables[0][2],tables[0][1])
     path = 'tables/anchor_users_positions.csv'
     anch = pd.read_csv(path)
     anch.set_index("ADDRESS", inplace=True)
