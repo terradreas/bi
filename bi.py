@@ -53,6 +53,31 @@ def download_data():
     #  data.rename(lowercase, axis='columns', inplace=True)
     return data
 
+from google.oauth2.service_account import Credentials
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseDownload
+from io import BytesIO
+
+def google_drive(id:str) -> pd.DataFrame:
+    SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
+    creds = Credentials.from_service_account_file(
+        "service-account.json",
+        scopes=SCOPES,
+    )
+    service = build(
+        "drive",
+        "v3",
+        credentials=creds,
+        cache_discovery=False,
+    )
+    request = service.files().get_media(fileId=id)
+    file = BytesIO()
+    downloader = MediaIoBaseDownload(file,request)
+    done = False
+    while done is False: _,done = downloader.next_chunk()
+    file.seek(0)
+    return pd.read_csv(file)
+
 @st.cache
 def load_data():
     #  path1 = 'tables/anchor_users_borrow_weekly.csv'
@@ -61,18 +86,39 @@ def load_data():
     #  path2 = 'tables/anchor_users_repay_weekly.csv'
     #  anchPay = pd.read_csv(path2)
     #  anchPay.set_index("ADDRESS", inplace=True)
-    #  return anchBor, anchPay
-    
-    tables = [("anch", "anchor_users_positions.csv", "1CEQN35wh6imQeuXM_LSWsI3uZ5UL0etp")]
-    
-    from util import load_gdrive
-    
-    load_gdrive(tables[0][2],tables[0][1])
-    path = 'tables/anchor_users_positions.csv'
-    anch = pd.read_csv(path)
-    anch.set_index("ADDRESS", inplace=True)
-    return anch
 
+    tables = [("anch", "anchor_users_positions.csv", "1CEQN35wh6imQeuXM_LSWsI3uZ5UL0etp")]
+    #  from util import load_gdrive
+    #  load_gdrive(tables[0][2],tables[0][1])   #  return anchBor, anchPay
+    #  path = 'tables/anchor_users_positions.csv'
+    #  anch = pd.read_csv(path)
+    #  anch.set_index("ADDRESS", inplace=True)
+    #  return anch
+
+    from pathlib import Path
+    from os.path import join
+
+    data = []
+    for t in tables:
+        dest = Path('tables')
+        dest.mkdir(exist_ok=True)
+    
+        dest = dest / t[1]
+
+        if not dest.exists():
+            with st.spinner("Downloading table " + t[1]):
+            
+                data += [ google_drive(t[2]) ]
+                data[-1].to_csv(str(dest), index=False)
+
+        else:
+            data += [pd.read_csv(str(dest))]
+
+    #  url = 'https://drive.google.com/file/d/1CEQN35wh6imQeuXM_LSWsI3uZ5UL0etp/view?usp=sharing'
+    #  path = 'https://drive.google.com/uc?export=download&id='+url.split('/')[-2]
+    #  anch = pd.read_csv(path)
+    data[0].set_index("ADDRESS", inplace=True)
+    return data[0]
 #  table = 0
 #  anchBor = 0
 #  anchPay = 0
@@ -88,6 +134,7 @@ def init():
     #  anchBor, anchPay = load_data()
     anch = load_data()
 
+    #  st.write(anch)
 
 init()
 
@@ -252,4 +299,5 @@ if st.session_state["section"] == "anchor":
 
 
     st.write("(Not final results. The borrow rate computation used behind the scene here is not yet accurate.)") 
+
 
