@@ -46,12 +46,17 @@ st.set_page_config(layout="wide")
 @st.cache
 def download_data():
     URL1 = 'https://api.flipsidecrypto.com/api/v2/queries/08c78cad-d2a6-4fa8-89cd-50884e55a389/data/latest'
-    data = pd.read_json(URL1)
-    data = data.sort_values("WEEK")
+
+    URL_CEX = 'https://api.flipsidecrypto.com/api/v2/queries/22362755-62b1-4a3a-92dc-3bf67aa9ea87/data/latest'
+
+    URL_BRIDGE = 'https://api.flipsidecrypto.com/api/v2/queries/672a89ad-3485-4a2c-b437-cea1c65afca9/data/latest'
+
+    cex = pd.read_json(URL_CEX)
+    bridge = pd.read_json(URL_BRIDGE)
     #  data["REPAYS_AMOUNT"] = -data["REPAYS_AMOUNT"]
     #  lowercase = lambda x: str(x).lower()
     #  data.rename(lowercase, axis='columns', inplace=True)
-    return data
+    return cex, bridge
 
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
@@ -106,38 +111,53 @@ def load_data():
         dest = dest / t[1]
 
         if not dest.exists():
-            print("downloading")
             with st.spinner("Downloading table " + t[1]):
-                
+            
                 data += [ google_drive(t[2]) ]
-                
-                st.write(data[-1])
                 data[-1].to_csv(str(dest), index=False)
 
         else:
             data += [pd.read_csv(str(dest))]
-            st.write(data[-1])
 
     #  url = 'https://drive.google.com/file/d/1CEQN35wh6imQeuXM_LSWsI3uZ5UL0etp/view?usp=sharing'
     #  path = 'https://drive.google.com/uc?export=download&id='+url.split('/')[-2]
     #  anch = pd.read_csv(path)
     data[0].set_index("ADDRESS", inplace=True)
-    return data[0]
+
+
+    cex, bridge = download_data()
+
+    cex = cex.sort_values("MONTH")
+
+    bridge = bridge.sort_values("MONTH")
+
+    m = cex['CEX_LABEL'] == 'binance'
+    cex.loc[m, 'CEX_LABEL'] = 'Binance'
+    m = cex['CEX_LABEL'] == 'kucoin'
+    cex.loc[m, 'CEX_LABEL'] = 'Kucoin'
+
+    return data[0], cex, bridge
 #  table = 0
 #  anchBor = 0
 #  anchPay = 0
 anch = 0
+cex = 0
+bridge = 0
 
 def init():
     #  global table
     #  global anchBor
     #  global anchPay
     global anch
+    global cex
+    global bridge
 
     #  table = download_data()
     #  anchBor, anchPay = load_data()
-    anch = load_data()
+    anch, cex, bridge = load_data()
 
+     #  = cex[cex['CEX_LABEL'] == binance]
+    #  st.write(binance)
     #  st.write(anch)
 
 init()
@@ -158,10 +178,174 @@ buttonCDP = st.sidebar.button("Anchor", on_click = click_anchor)
 if st.session_state["section"] == "flows":
     st.title('Flows')
 
-    col1, col2 = st.columns([3,3])
-    col1.write("#### CEX")
-    col2.write("#### Bridges")
+    #  st.write(bridge)
 
+    width = 10
+
+    coin = st.radio(
+     "",
+     ('UST', 'LUNA', 'both'))
+
+
+    col1, col2 = st.columns([3,3])
+    col1.write("### CEX")
+    col2.write("### Bridges")
+
+    st.write("#### Inflows/Outflows into/from Terra (positive/negative, in USD)")
+    
+    col1, col2 = st.columns([3,3])
+
+    exchangeLabels = ['Binance', 'Kucoin', 'Others']
+    exchangeColors = ['#E8Ba41', '#52AC92', 'red']
+
+    x0 = np.array( [pd.Timestamp(x).date() for x in cex.groupby('MONTH').sum().index.tolist() ] )
+
+    fig, ax = plt.subplots(1, figsize=(6,4))
+    for inout in [1.,-1.]:
+
+        # bottom of bar plot: reset after doing one sign 
+        y0 = np.zeros(x0.size)
+        for ex, col in zip(exchangeLabels, exchangeColors):
+
+            #  m = pd.Series(True, index=cex.index)
+            m = (cex['CAPITAL_FLOW_AMOUNT']*inout > 0)
+
+            if coin != 'both':
+                m = (m & (cex['TYPE'] == coin))
+
+            if ex == 'Others':
+                # exclude all but last in list (last = Others)
+                for ex2 in exchangeLabels[:-1]:
+                    m = (m & (cex['CEX_LABEL'] != ex2))
+            else:
+                m = m & (cex['CEX_LABEL'] == ex)
+
+            data = cex[m].groupby('MONTH', as_index=False)['CAPITAL_FLOW_AMOUNT'].sum()
+
+            xid = np.array( [ np.argwhere(x0 == pd.Timestamp(x).date())[0][0] for x in data.MONTH] )
+            y = np.zeros(x0.size)
+            y[xid] = data['CAPITAL_FLOW_AMOUNT'].to_numpy()
+
+            
+            ax.bar(x0, y, width=width, bottom=y0, color=col)
+
+            y0 += y
+    ax.legend(exchangeLabels)
+    ax.plot(x0, y*0, 'k--', lw=1)
+    ax.set_xticklabels(x0, rotation=45, ha='right')
+    formatter = mdates.DateFormatter("%Y-%m-%d")
+    ax.xaxis.set_major_formatter(formatter)
+    ax.grid()
+    col1.pyplot(fig)
+
+
+    x0 = np.array( [pd.Timestamp(x).date() for x in bridge.groupby('MONTH').sum().index.tolist() ] )
+    bridgeLabels = ['Wormhole', 'Shuttle']
+    bridgeColors = ['#BF2952', '#6092F0']
+
+    fig, ax = plt.subplots(1, figsize=(6,4))
+    for inout in [1.,-1.]:
+
+        # bottom of bar plot: reset after doing one sign 
+        y0 = np.zeros(x0.size)
+        for ex, col in zip(bridgeLabels, bridgeColors):
+
+            #  m = pd.Series(True, index=cex.index)
+            m = (bridge['CAPITAL_FLOW_AMOUNT']*inout > 0)
+
+            if coin != 'both':
+                m = (m & (bridge['CURRENCY'] == coin))
+
+            m = m & (bridge['BRIDGE'] == ex)
+
+            data = bridge[m].groupby('MONTH', as_index=False)['CAPITAL_FLOW_AMOUNT'].sum()
+
+            xid = np.array( [ np.argwhere(x0 == pd.Timestamp(x).date())[0][0] for x in data.MONTH] )
+            y = np.zeros(x0.size)
+            y[xid] = data['CAPITAL_FLOW_AMOUNT'].to_numpy()
+
+            
+            ax.bar(x0, y, width=width, bottom=y0, color=col)
+
+            y0 += y
+
+    ax.legend(bridgeLabels)
+    ax.plot(x0, y*0, 'k--', lw=1)
+    ax.set_xticklabels(x0, rotation=45, ha='right')
+    formatter = mdates.DateFormatter("%Y-%m-%d")
+    ax.xaxis.set_major_formatter(formatter)
+    ax.grid()
+    col2.pyplot(fig)
+
+
+
+    st.write("#### Accumulated (total) net flows (positive: into Terra, negative: leaving Terra), in USD")
+    
+    col1, col2 = st.columns([3,3])
+
+    fig, ax = plt.subplots(1, figsize=(6,4))
+
+    for i, (ex, col) in enumerate(zip(exchangeLabels, exchangeColors)):
+
+        y = np.zeros(x0.size)
+
+        m = pd.Series(True, index=cex.index)
+
+        if coin != 'both':
+            m = (m & (cex['TYPE'] == coin))
+
+        if ex == 'Others':
+            # exclude all but last in list (last = Others)
+            for ex2 in exchangeLabels[:-1]:
+                m = (m & (cex['CEX_LABEL'] != ex2))
+        else:
+            m = m & (cex['CEX_LABEL'] == ex)
+
+        data = cex[m].groupby('MONTH', as_index=False)['CAPITAL_FLOW_AMOUNT'].sum()
+
+        xid = np.array( [ np.argwhere(x0 == pd.Timestamp(x).date())[0][0] for x in data.MONTH] )
+        y[xid] = np.cumsum(data['CAPITAL_FLOW_AMOUNT'].to_numpy())
+
+        
+        ax.bar(x0+pd.tseries.offsets.DateOffset(8*i, 'day'), y, width=width, color=col)
+
+    ax.legend(exchangeLabels)
+    ax.plot(x0, y*0, 'k--', lw=1)
+    ax.set_xticklabels(x0, rotation=45, ha='right')
+    formatter = mdates.DateFormatter("%Y-%m-%d")
+    ax.xaxis.set_major_formatter(formatter)
+    ax.grid()
+    col1.pyplot(fig)
+
+
+    fig, ax = plt.subplots(1, figsize=(6,4))
+
+    for i, (ex, col) in enumerate(zip(bridgeLabels, bridgeColors)):
+
+        y = np.zeros(x0.size)
+
+        m = pd.Series(True, index=bridge.index)
+
+        if coin != 'both':
+            m = (m & (bridge['CURRENCY'] == coin))
+
+        m = m & (bridge['BRIDGE'] == ex)
+
+        data = bridge[m].groupby('MONTH', as_index=False)['CAPITAL_FLOW_AMOUNT'].sum()
+
+        xid = np.array( [ np.argwhere(x0 == pd.Timestamp(x).date())[0][0] for x in data.MONTH] )
+        y[xid] = np.cumsum(data['CAPITAL_FLOW_AMOUNT'].to_numpy())
+
+        
+        ax.bar(x0+pd.tseries.offsets.DateOffset(8*i, 'day'), y, width=width, color=col)
+
+    ax.legend(bridgeLabels)
+    ax.plot(x0, y*0, 'k--', lw=1)
+    ax.set_xticklabels(x0, rotation=45, ha='right')
+    formatter = mdates.DateFormatter("%Y-%m-%d")
+    ax.xaxis.set_major_formatter(formatter)
+    ax.grid()
+    col2.pyplot(fig)
 ############ ANCHOR ##############
 
 if st.session_state["section"] == "anchor":
