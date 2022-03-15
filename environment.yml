@@ -1,5 +1,6 @@
 name: bi
 channels:
+  - defaults
   - conda-forge
 dependencies:
   - matplotlib
