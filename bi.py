@@ -48,15 +48,17 @@ def download_data():
     URL1 = 'https://api.flipsidecrypto.com/api/v2/queries/08c78cad-d2a6-4fa8-89cd-50884e55a389/data/latest'
 
     URL_CEX = 'https://api.flipsidecrypto.com/api/v2/queries/22362755-62b1-4a3a-92dc-3bf67aa9ea87/data/latest'
-
     URL_BRIDGE = 'https://api.flipsidecrypto.com/api/v2/queries/672a89ad-3485-4a2c-b437-cea1c65afca9/data/latest'
+    URL_WALLETS = 'https://api.flipsidecrypto.com/api/v2/queries/8825fb7f-4bf7-4a7d-b00e-21c684b12d6c/data/latest'
+
 
     cex = pd.read_json(URL_CEX)
     bridge = pd.read_json(URL_BRIDGE)
+    wallets = pd.read_json(URL_WALLETS)
     #  data["REPAYS_AMOUNT"] = -data["REPAYS_AMOUNT"]
     #  lowercase = lambda x: str(x).lower()
     #  data.rename(lowercase, axis='columns', inplace=True)
-    return cex, bridge
+    return cex, bridge, wallets
 
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
@@ -125,7 +127,7 @@ def load_data():
     data[0].set_index("ADDRESS", inplace=True)
 
 
-    cex, bridge = download_data()
+    cex, bridge, wallets = download_data()
 
     cex = cex.sort_values("MONTH")
 
@@ -136,13 +138,21 @@ def load_data():
     m = cex['CEX_LABEL'] == 'kucoin'
     cex.loc[m, 'CEX_LABEL'] = 'Kucoin'
 
-    return data[0], cex, bridge
+    #  wallets.reset_index(inplace=False)
+    #  wallets.columns = ['foo', 'bsar']
+    #  wallets.index.name = 'Day'
+    wallets.rename({'MIN_TIMESTAMP':'Day', 'WALLET_COUNT':'New wallets from CEX'}, axis=1, inplace=True)
+    wallets['Day'] = wallets['Day'].map(lambda x: pd.Timestamp(x).date())
+    wallets.set_index("Day", inplace=True)
+
+    return data[0], cex, bridge, wallets
 #  table = 0
 #  anchBor = 0
 #  anchPay = 0
 anch = 0
 cex = 0
 bridge = 0
+wallets = 0
 
 def init():
     #  global table
@@ -151,10 +161,10 @@ def init():
     global anch
     global cex
     global bridge
-
+    global wallets
     #  table = download_data()
     #  anchBor, anchPay = load_data()
-    anch, cex, bridge = load_data()
+    anch, cex, bridge, wallets = load_data()
 
      #  = cex[cex['CEX_LABEL'] == binance]
     #  st.write(binance)
@@ -170,15 +180,22 @@ def click_flows():
     st.session_state["section"] = "flows"
 def click_anchor(): 
     st.session_state["section"] = "anchor"
+def click_misc(): 
+    st.session_state["section"] = "misc"
 
-buttonBasic = st.sidebar.button("Flows in/out Terra", on_click = click_flows)#, key=None, help=None, on_click=None, args=None, kwargs=None, *, disabled=False)
+buttonFlows = st.sidebar.button("Flows in/out Terra", on_click = click_flows)#, key=None, help=None, on_click=None, args=None, kwargs=None, *, disabled=False)
 buttonCDP = st.sidebar.button("Anchor", on_click = click_anchor)
+buttonMisc = st.sidebar.button("Misc", on_click = click_misc)
 
+if st.session_state["section"] == "misc":
+    st.title('Miscellaneous')
+
+    st.write("#### First-time transfers from CEX to new wallet (LUNA+UST)")
+
+    st.bar_chart(wallets)
 
 if st.session_state["section"] == "flows":
     st.title('Flows')
-
-    #  st.write(bridge)
 
     width = 10
 
@@ -230,6 +247,7 @@ if st.session_state["section"] == "flows":
             ax.bar(x0, y, width=width, bottom=y0, color=col)
 
             y0 += y
+
     ax.legend(exchangeLabels)
     ax.plot(x0, y*0, 'k--', lw=1)
     ax.set_xticklabels(x0, rotation=45, ha='right')
@@ -414,7 +432,7 @@ if st.session_state["section"] == "anchor":
 
     #### AGE OF POSITIONS ####
 
-    st.write("##### Full tracking of position and their ages")
+    st.write("##### Full tracking of positions by age")
     fig, ax0 = plt.subplots(1, figsize=(6,4))
 
     cuts = [14, 30, 60, 90, 180]
